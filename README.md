@@ -1,4 +1,4 @@
-# ⚡ SpinVerse
+# 🔥 Turbo Mega Çark
 
 Modern dark casino çark oyunu. React + Vite ile geliştirildi.
 
