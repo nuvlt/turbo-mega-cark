@@ -759,12 +759,17 @@ function ResultScreen({ amount, bet, onContinue }) {
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-function Modal({ type, seg, bet, onClose }) {
+function Modal({ type, seg, bet, onClose, onWin, onLose }) {
   const [phase, setPhase] = useState("game");
   const [resultAmount, setResultAmount] = useState(0);
   const outcomeRef = useRef(type !== "mult" ? serverMiniOutcome(type) : null);
   const accentColor = { mult: seg?.jackpot ? "#ffd600" : "#00e5ff", quick: "#00e5ff", guess: "#d500f9", combo: "#ff9100" }[type] || "#ffd600";
-  const handleResult = (amt) => { setResultAmount(amt); setPhase("result"); };
+  const handleResult = (amt) => {
+    // Ses HEMEN burada çalıyor — sonuç belli olur olmaz, DEVAM'a basmayı beklemiyor
+    if (amt > 0) onWin?.(); else onLose?.();
+    setResultAmount(amt);
+    setPhase("result");
+  };
 
   return (
     <div style={{
@@ -890,9 +895,6 @@ export default function App() {
     if (win > 0) {
       setBalance(b => parseFloat((b + win).toFixed(2)));
       setStats(s => ({ ...s, won: s.won + win }));
-      sounds.playWin();  // kazanma sesi
-    } else {
-      sounds.playLose(); // kaybetme sesi
     }
     if (m) {
       setLastResult({ amount: win, label: m.seg.label, type: m.seg.type, jackpot: m.seg.jackpot });
@@ -1109,7 +1111,7 @@ export default function App() {
         )}
       </div>
 
-      {modal && <Modal type={modal.type} seg={modal.seg} bet={bet} onClose={handleModalClose} />}
+      {modal && <Modal type={modal.type} seg={modal.seg} bet={bet} onClose={handleModalClose} onWin={sounds.playWin} onLose={sounds.playLose} />}
       {showInfo && <InfoPanel onClose={() => setShowInfo(false)} />}
     </>
   );
