@@ -955,35 +955,43 @@ export default function App() {
             }}>ℹ️</button>
         </div>
 
-        {/* Last Result */}
-        {lastResult && (
-          <div style={{
-            textAlign: "center", padding: "6px 13px", borderRadius: 9, marginBottom: 9,
-            background: lastResult.jackpot
-              ? "rgba(255,214,0,0.15)"
-              : lastResult.amount > 0 ? "rgba(255,214,0,0.08)" : "rgba(255,68,68,0.07)",
-            border: `1px solid ${lastResult.jackpot ? "rgba(255,214,0,0.6)" : lastResult.amount > 0 ? "rgba(255,214,0,0.3)" : "rgba(255,68,68,0.28)"}`,
-            fontFamily: "Orbitron",
-            color: lastResult.jackpot ? "#ffd600" : lastResult.amount > 0 ? "#ffd600" : "#ff5555",
-            fontSize: lastResult.jackpot ? 15 : 13,
-            animation: "slideUp 0.35s ease",
-            boxShadow: lastResult.jackpot ? "0 0 20px rgba(255,214,0,0.3)" : "none"
-          }}>
-            {lastResult.jackpot
-              ? `🏆 JACKPOT! +${lastResult.amount.toFixed(2)} TL`
-              : lastResult.amount > 0
-              ? `💰 +${lastResult.amount.toFixed(2)} TL — ${lastResult.label}`
-              : `💀 KAYIP — ${lastResult.label}`}
-          </div>
-        )}
-
-        {/* Jackpot teaser */}
-        <div style={{
-          textAlign: "center", padding: "5px 0", marginBottom: 6,
-          fontFamily: "Orbitron", fontSize: 11,
-          color: "rgba(255,214,0,0.55)", letterSpacing: 1
-        }}>
-          ⭐ x25 JACKPOT çarkta seni bekliyor
+        {/* Last Result + Jackpot teaser — sabit yükseklikte alan, layout kaymaz */}
+        <div style={{ height: 36, marginBottom: 6, position: "relative" }}>
+          {lastResult ? (
+            // Sonuç banner — absolute, layout'u etkilemez
+            <div style={{
+              position: "absolute", inset: 0,
+              textAlign: "center", padding: "6px 13px", borderRadius: 9,
+              background: lastResult.jackpot
+                ? "rgba(255,214,0,0.15)"
+                : lastResult.amount > 0 ? "rgba(255,214,0,0.08)" : "rgba(255,68,68,0.07)",
+              border: `1px solid ${lastResult.jackpot ? "rgba(255,214,0,0.6)" : lastResult.amount > 0 ? "rgba(255,214,0,0.3)" : "rgba(255,68,68,0.28)"}`,
+              fontFamily: "Orbitron",
+              color: lastResult.jackpot ? "#ffd600" : lastResult.amount > 0 ? "#ffd600" : "#ff5555",
+              fontSize: lastResult.jackpot ? 14 : 12,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              animation: "slideUp 0.35s ease",
+              boxShadow: lastResult.jackpot ? "0 0 20px rgba(255,214,0,0.3)" : "none",
+              zIndex: 2
+            }}>
+              {lastResult.jackpot
+                ? `🏆 JACKPOT! +${lastResult.amount.toFixed(2)} TL`
+                : lastResult.amount > 0
+                ? `💰 +${lastResult.amount.toFixed(2)} TL — ${lastResult.label}`
+                : `💀 KAYIP — ${lastResult.label}`}
+            </div>
+          ) : (
+            // Jackpot teaser — pointer ile çakışmaması için z-index: 1
+            <div style={{
+              position: "absolute", inset: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "Orbitron", fontSize: 11,
+              color: "rgba(255,214,0,0.6)", letterSpacing: 1,
+              zIndex: 1, pointerEvents: "none"
+            }}>
+              ⭐ x25 JACKPOT çarkta seni bekliyor
+            </div>
+          )}
         </div>
 
         {/* Wheel */}
