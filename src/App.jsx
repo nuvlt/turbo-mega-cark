@@ -955,10 +955,14 @@ export default function App() {
             }}>ℹ️</button>
         </div>
 
-        {/* Last Result + Jackpot teaser — sabit yükseklikte alan, layout kaymaz */}
-        <div style={{ height: 36, marginBottom: 6, position: "relative" }}>
+        {/* Wheel */}
+        <div style={{ margin: "0 0 8px" }}>
+          <Wheel spinTrigger={spinTrigger} onSpinEnd={handleSpinEnd} />
+        </div>
+
+        {/* Tüm durum mesajları çarkın ALTINDA — pointer ile hiç çakışmaz */}
+        <div style={{ height: 36, marginBottom: 8, position: "relative" }}>
           {lastResult ? (
-            // Sonuç banner — absolute, layout'u etkilemez
             <div style={{
               position: "absolute", inset: 0,
               textAlign: "center", padding: "6px 13px", borderRadius: 9,
@@ -971,8 +975,7 @@ export default function App() {
               fontSize: lastResult.jackpot ? 14 : 12,
               display: "flex", alignItems: "center", justifyContent: "center",
               animation: "slideUp 0.35s ease",
-              boxShadow: lastResult.jackpot ? "0 0 20px rgba(255,214,0,0.3)" : "none",
-              zIndex: 2
+              boxShadow: lastResult.jackpot ? "0 0 20px rgba(255,214,0,0.3)" : "none"
             }}>
               {lastResult.jackpot
                 ? `🏆 JACKPOT! +${lastResult.amount.toFixed(2)} TL`
@@ -981,22 +984,16 @@ export default function App() {
                 : `💀 KAYIP — ${lastResult.label}`}
             </div>
           ) : (
-            // Jackpot teaser — pointer ile çakışmaması için z-index: 1
             <div style={{
               position: "absolute", inset: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
               fontFamily: "Orbitron", fontSize: 11,
               color: "rgba(255,214,0,0.6)", letterSpacing: 1,
-              zIndex: 1, pointerEvents: "none"
+              pointerEvents: "none"
             }}>
               ⭐ x25 JACKPOT çarkta seni bekliyor
             </div>
           )}
-        </div>
-
-        {/* Wheel */}
-        <div style={{ margin: "0 0 14px" }}>
-          <Wheel spinTrigger={spinTrigger} onSpinEnd={handleSpinEnd} />
         </div>
 
         {/* Spin Button */}
