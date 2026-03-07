@@ -1,5 +1,27 @@
 import { useState, useEffect, useRef } from "react";
 
+// ─── API BAĞLANTISI ───────────────────────────────────────────────────────────
+const API = import.meta.env.VITE_API_URL || "https://turbo-mega-cark-backend-production.up.railway.app";
+
+function getSessionToken() {
+  return new URLSearchParams(window.location.search).get("token");
+}
+
+async function apiFetch(path, options = {}) {
+  const token = getSessionToken();
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "x-session-token": token } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "API hatası");
+  return data;
+}
+
 // ─── SES SİSTEMİ ─────────────────────────────────────────────────────────────
 // Ses dosyaları /public/sounds/ klasöründe olmalı (GitHub'a koyun)
 // Dosya isimleri: bg-music.mp3, spin.mp3, win.mp3, lose.mp3
@@ -125,28 +147,8 @@ const SEG_ANGLE = 360 / NUM_SEGS;   // 18°
 // Mini game ikonları
 const SEG_ICON = { quick: "⚡", guess: "🔮", combo: "🎰" };
 
-function pickSegmentIndex() {
-  const total = SEG_WEIGHTS.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < NUM_SEGS; i++) {
-    r -= SEG_WEIGHTS[i];
-    if (r <= 0) return i;
-  }
-  return 0;
-}
-
-// Server-side mini oyun sonucu (RTP kalibrasyonlu)
-function serverMiniOutcome(type) {
-  const r = Math.random();
-  if (type === "quick") return r < 0.35 ? "win" : "lose";   // E[R]=0.70
-  if (type === "guess") return r < 0.41 ? "win" : "lose";   // E[R]=0.738
-  if (type === "combo") {                                     // E[R]=0.775
-    if (r < 0.10) return "win3";
-    if (r < 0.35) return "win2";
-    return "lose";
-  }
-  return "lose";
-}
+// Tüm RNG backend'e taşındı (Railway) — frontend Math.random() kullanmıyor
+// Artık tüm RNG Railway backend'de çalışıyor
 
 // ─── Açı Matematiği ───────────────────────────────────────────────────────────
 // SVG'de segment i: startAngle = i*SEG_ANGLE - 90°  (CW, 0=sağ)
@@ -668,8 +670,9 @@ function ComboMatch({ bet, outcome, onResult }) {
 }
 
 // ─── Mult Result ──────────────────────────────────────────────────────────────
-function MultResult({ seg, bet, onDone }) {
-  const win = Math.round(bet * (seg.mult || 0) * 100) / 100;
+function MultResult({ seg, bet, winAmount, onDone }) {
+  // winAmount backend'den geliyor — frontend hesaplamıyor
+  const win = winAmount !== undefined ? winAmount : Math.round(bet * (seg.mult || 0) * 100) / 100;
   const isJackpot = seg.jackpot;
   const isBig = seg.mult >= 10;
   const isLoss = seg.mult === 0;
@@ -759,15 +762,17 @@ function ResultScreen({ amount, bet, onContinue }) {
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-function Modal({ type, seg, bet, onClose, onWin, onLose }) {
+function Modal({ type, seg, bet, miniOutcome, winAmount, onClose, onWin, onLose }) {
   const [phase, setPhase] = useState("game");
   const [resultAmount, setResultAmount] = useState(0);
-  const outcomeRef = useRef(type !== "mult" ? serverMiniOutcome(type) : null);
+  // miniOutcome ve winAmount backend'den geliyor — frontend RNG kullanmıyor
+  const outcomeRef = useRef(miniOutcome || null);
   const accentColor = { mult: seg?.jackpot ? "#ffd600" : "#00e5ff", quick: "#00e5ff", guess: "#d500f9", combo: "#ff9100" }[type] || "#ffd600";
   const handleResult = (amt) => {
-    // Ses HEMEN burada çalıyor — sonuç belli olur olmaz, DEVAM'a basmayı beklemiyor
-    if (amt > 0) onWin?.(); else onLose?.();
-    setResultAmount(amt);
+    // Backend'den gelen winAmount'ı kullan, animasyon parametresi değil
+    const finalAmt = (winAmount !== undefined && winAmount !== null) ? winAmount : amt;
+    if (finalAmt > 0) onWin?.(); else onLose?.();
+    setResultAmount(finalAmt);
     setPhase("result");
   };
 
@@ -792,10 +797,10 @@ function Modal({ type, seg, bet, onClose, onWin, onLose }) {
           position: "absolute", top: 0, left: "12%", right: "12%", height: 3, borderRadius: 2,
           background: accentColor, boxShadow: `0 0 16px ${accentColor}`
         }} />
-        {type === "mult" && phase === "game" && <MultResult seg={seg} bet={bet} onDone={handleResult} />}
-        {type === "quick" && phase === "game" && <QuickMatch bet={bet} outcome={outcomeRef.current} onResult={handleResult} />}
-        {type === "guess" && phase === "game" && <GuessNext bet={bet} outcome={outcomeRef.current} onResult={handleResult} />}
-        {type === "combo" && phase === "game" && <ComboMatch bet={bet} outcome={outcomeRef.current} onResult={handleResult} />}
+        {type === "mult" && phase === "game" && <MultResult seg={seg} bet={bet} winAmount={winAmount} onDone={handleResult} />}
+        {type === "quick" && phase === "game" && <QuickMatch bet={bet} outcome={outcomeRef.current} winAmount={winAmount} onResult={handleResult} />}
+        {type === "guess" && phase === "game" && <GuessNext bet={bet} outcome={outcomeRef.current} winAmount={winAmount} onResult={handleResult} />}
+        {type === "combo" && phase === "game" && <ComboMatch bet={bet} outcome={outcomeRef.current} winAmount={winAmount} onResult={handleResult} />}
         {phase === "result" && <ResultScreen amount={resultAmount} bet={bet} onContinue={() => onClose(resultAmount)} />}
       </div>
     </div>
@@ -855,35 +860,86 @@ function InfoPanel({ onClose }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [balance, setBalance] = useState(1000);
-  const [bet, setBet] = useState(10);
+  const [balance, setBalance]       = useState(null);   // null = henüz yüklenmedi
+  const [currency, setCurrency]     = useState("TRY");
+  const [sessionStatus, setSessionStatus] = useState("loading"); // loading | ok | error
+  const [bet, setBet]               = useState(10);
   const [spinTrigger, setSpinTrigger] = useState(null);
-  const [modal, setModal] = useState(null);
+  const [pendingSpin, setPendingSpin] = useState(null); // backend'den gelen spin sonucu
+  const [modal, setModal]           = useState(null);
   const [lastResult, setLastResult] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [showInfo, setShowInfo] = useState(false);
-  const [stats, setStats] = useState({ spent: 0, won: 0 });
-  const lastModalRef = useRef(null);
+  const [history, setHistory]       = useState([]);
+  const [showInfo, setShowInfo]     = useState(false);
+  const [stats, setStats]           = useState({ spent: 0, won: 0 });
+  const lastModalRef                = useRef(null);
 
   const quickBets = [5, 10, 25, 50, 100];
-  const spinning = spinTrigger !== null;
-  const sounds = useGameSounds();
+  const spinning   = spinTrigger !== null;
+  const sounds     = useGameSounds();
 
-  const startSpin = () => {
-    if (spinning || balance < bet) return;
-    setBalance(b => parseFloat((b - bet).toFixed(2)));
-    setStats(s => ({ ...s, spent: s.spent + bet }));
+  // ── Sayfa yüklenince bakiyeyi backend'den al ────────────────────────────────
+  useEffect(() => {
+    const token = getSessionToken();
+    if (!token) {
+      setSessionStatus("error");
+      return;
+    }
+    apiFetch("/game/balance")
+      .then(data => {
+        setBalance(parseFloat(data.balance));
+        setCurrency(data.currency || "TRY");
+        setSessionStatus("ok");
+      })
+      .catch(() => setSessionStatus("error"));
+  }, []);
+
+  const startSpin = async () => {
+    if (spinning || balance === null || balance < bet) return;
     setLastResult(null);
-    const idx = pickSegmentIndex();
     sounds.playSpin();
-    setSpinTrigger({ segIndex: idx, id: Date.now() });
+
+    try {
+      // Backend'e spin isteği at — RNG orada çalışır
+      const result = await apiFetch("/game/spin", {
+        method: "POST",
+        body: JSON.stringify({ bet }),
+      });
+
+      // Bakiyeyi hemen güncelle (optimistik değil, gerçek)
+      setBalance(parseFloat(result.balance));
+      setStats(s => ({
+        spent: parseFloat((s.spent + bet).toFixed(2)),
+        won:   parseFloat((s.won + result.winAmount).toFixed(2)),
+      }));
+
+      // Spin sonucunu sakla — çark durduğunda modal açılacak
+      setPendingSpin(result);
+
+      // Çarkı döndür — backend'den gelen segIndex ile
+      setSpinTrigger({ segIndex: result.segIndex, id: Date.now() });
+
+    } catch (err) {
+      sounds.stopSpin();
+      console.error("Spin hatası:", err.message);
+      // Bakiyeyi yenile (olası tutarsızlık için)
+      apiFetch("/game/balance").then(d => setBalance(parseFloat(d.balance))).catch(() => {});
+    }
   };
 
   const handleSpinEnd = (detectedIndex) => {
     setSpinTrigger(null);
     sounds.stopSpin();
     const seg = SEGMENTS[detectedIndex];
-    const m = { type: seg.type, seg };
+    // pendingSpin backend'den geldi — miniOutcome, winAmount vs. orada belirlendi
+    const spin = pendingSpin;
+    setPendingSpin(null);
+    const m = {
+      type: seg.type,
+      seg,
+      // Backend'den gelen mini oyun sonucu ve kazanç
+      miniOutcome: spin?.miniOutcome ?? null,
+      winAmount:   spin?.winAmount  ?? 0,
+    };
     lastModalRef.current = m;
     setTimeout(() => setModal(m), 320);
   };
@@ -891,11 +947,8 @@ export default function App() {
   const handleModalClose = (amount) => {
     const m = lastModalRef.current;
     setModal(null);
-    const win = parseFloat(amount.toFixed(2));
-    if (win > 0) {
-      setBalance(b => parseFloat((b + win).toFixed(2)));
-      setStats(s => ({ ...s, won: s.won + win }));
-    }
+    const win = parseFloat((amount || 0).toFixed(2));
+    // Bakiye zaten startSpin'de backend'den güncellendi — burada tekrar değiştirmiyoruz
     if (m) {
       setLastResult({ amount: win, label: m.seg.label, type: m.seg.type, jackpot: m.seg.jackpot });
       setHistory(h => [{ label: m.seg.label, bet, win, jackpot: m.seg.jackpot }, ...h.slice(0, 11)]);
@@ -903,6 +956,33 @@ export default function App() {
   };
 
   const liveRTP = stats.spent > 0 ? ((stats.won / stats.spent) * 100).toFixed(1) : "—";
+
+  // ── Session yükleniyor ────────────────────────────────────────────────────
+  if (sessionStatus === "loading") {
+    return (
+      <div style={{ minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", background:"#060614" }}>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:40, marginBottom:16 }}>🎡</div>
+          <div style={{ fontFamily:"Orbitron", color:"rgba(255,255,255,0.5)", fontSize:13 }}>Yükleniyor...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Session geçersiz veya token yok ──────────────────────────────────────
+  if (sessionStatus === "error") {
+    return (
+      <div style={{ minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", background:"#060614" }}>
+        <div style={{ textAlign:"center", padding:24 }}>
+          <div style={{ fontSize:48, marginBottom:16 }}>🔒</div>
+          <div style={{ fontFamily:"Orbitron", color:"#ff4444", fontSize:16, marginBottom:8 }}>GEÇERSİZ OTURUM</div>
+          <div style={{ fontFamily:"Rajdhani", color:"rgba(255,255,255,0.4)", fontSize:13 }}>
+            Bu oyuna erişmek için geçerli bir oturum token'ı gereklidir.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -947,7 +1027,7 @@ export default function App() {
           }}>
             <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontFamily: "Orbitron", textAlign: "center" }}>BAKİYE</div>
             <div style={{ fontSize: 17, fontWeight: 700, color: "#ffd600", fontFamily: "Orbitron" }}>
-              {balance.toFixed(2)} <span style={{ fontSize: 10, opacity: 0.6 }}>TL</span>
+              {balance !== null ? balance.toFixed(2) : "..."} <span style={{ fontSize: 10, opacity: 0.6 }}>{currency}</span>
             </div>
           </div>
           <button onClick={() => setShowInfo(true)}
@@ -1111,7 +1191,7 @@ export default function App() {
         )}
       </div>
 
-      {modal && <Modal type={modal.type} seg={modal.seg} bet={bet} onClose={handleModalClose} onWin={sounds.playWin} onLose={sounds.playLose} />}
+      {modal && <Modal type={modal.type} seg={modal.seg} bet={bet} miniOutcome={modal.miniOutcome} winAmount={modal.winAmount} onClose={handleModalClose} onWin={sounds.playWin} onLose={sounds.playLose} />}
       {showInfo && <InfoPanel onClose={() => setShowInfo(false)} />}
     </>
   );
