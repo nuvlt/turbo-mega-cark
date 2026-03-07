@@ -871,7 +871,11 @@ export default function App() {
   const [history, setHistory]       = useState([]);
   const [showInfo, setShowInfo]     = useState(false);
   const [stats, setStats]           = useState({ spent: 0, won: 0 });
+  const [spinError, setSpinError]   = useState(null);   // spin hata mesajı
+  const [balanceAnim, setBalanceAnim] = useState(null); // "up" | "down" | null
+  const [sessionExpired, setSessionExpired] = useState(false);
   const lastModalRef                = useRef(null);
+  const sessionCheckRef             = useRef(null);
 
   const quickBets = [5, 10, 25, 50, 100];
   const spinning   = spinTrigger !== null;
@@ -893,35 +897,59 @@ export default function App() {
       .catch(() => setSessionStatus("error"));
   }, []);
 
+  // ── Session süresi dolunca uyar (her 30 sn bakiye çekmeye çalış) ───────────
+  useEffect(() => {
+    if (sessionStatus !== "ok") return;
+    sessionCheckRef.current = setInterval(() => {
+      apiFetch("/game/balance")
+        .then(d => setBalance(parseFloat(d.balance)))
+        .catch(err => {
+          if (err.message.includes("süresi") || err.message.includes("Geçersiz")) {
+            setSessionExpired(true);
+            clearInterval(sessionCheckRef.current);
+          }
+        });
+    }, 30000);
+    return () => clearInterval(sessionCheckRef.current);
+  }, [sessionStatus]);
+
   const startSpin = async () => {
     if (spinning || balance === null || balance < bet) return;
     setLastResult(null);
+    setSpinError(null);
     sounds.playSpin();
 
     try {
-      // Backend'e spin isteği at — RNG orada çalışır
       const result = await apiFetch("/game/spin", {
         method: "POST",
         body: JSON.stringify({ bet }),
       });
 
-      // Bakiyeyi hemen güncelle (optimistik değil, gerçek)
-      setBalance(parseFloat(result.balance));
+      // Bakiye animasyonu
+      const newBal = parseFloat(result.balance);
+      const dir = newBal > balance ? "up" : "down";
+      setBalance(newBal);
+      setBalanceAnim(dir);
+      setTimeout(() => setBalanceAnim(null), 700);
+
       setStats(s => ({
         spent: parseFloat((s.spent + bet).toFixed(2)),
         won:   parseFloat((s.won + result.winAmount).toFixed(2)),
       }));
 
-      // Spin sonucunu sakla — çark durduğunda modal açılacak
       setPendingSpin(result);
-
-      // Çarkı döndür — backend'den gelen segIndex ile
       setSpinTrigger({ segIndex: result.segIndex, id: Date.now() });
 
     } catch (err) {
       sounds.stopSpin();
-      console.error("Spin hatası:", err.message);
-      // Bakiyeyi yenile (olası tutarsızlık için)
+      // Session süresi dolduysa expired ekranı göster
+      if (err.message.includes("süresi") || err.message.includes("Geçersiz")) {
+        setSessionExpired(true);
+        return;
+      }
+      // Diğer hatalar için kullanıcıya mesaj göster
+      setSpinError(err.message || "Bağlantı hatası, tekrar deneyin");
+      setTimeout(() => setSpinError(null), 3000);
       apiFetch("/game/balance").then(d => setBalance(parseFloat(d.balance))).catch(() => {});
     }
   };
@@ -996,6 +1024,10 @@ export default function App() {
         @keyframes slideUp{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
         @keyframes jackpotPulse{from{transform:scale(1)}to{transform:scale(1.15)}}
         @keyframes jackpotBg{0%,100%{box-shadow:0 0 30px rgba(255,214,0,0.4)}50%{box-shadow:0 0 60px rgba(255,214,0,0.8)}}
+        @keyframes balanceUp{0%{color:#ffd600}40%{color:#00e676;transform:scale(1.08)}100%{color:#ffd600;transform:scale(1)}}
+        @keyframes balanceDown{0%{color:#ffd600}40%{color:#ff4444;transform:scale(0.94)}100%{color:#ffd600;transform:scale(1)}}
+        @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}60%{transform:translateX(4px)}}
+        @keyframes sessionExpire{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
         button{outline:none;}
         ::-webkit-scrollbar{width:3px;}
         ::-webkit-scrollbar-thumb{background:rgba(0,229,255,0.2);border-radius:2px;}
@@ -1026,7 +1058,11 @@ export default function App() {
             background: "rgba(255,214,0,0.07)", border: "1px solid rgba(255,214,0,0.22)"
           }}>
             <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontFamily: "Orbitron", textAlign: "center" }}>BAKİYE</div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "#ffd600", fontFamily: "Orbitron" }}>
+            <div style={{
+              fontSize: 17, fontWeight: 700, fontFamily: "Orbitron",
+              animation: balanceAnim === "up" ? "balanceUp 0.6s ease" : balanceAnim === "down" ? "balanceDown 0.6s ease" : "none",
+              color: "#ffd600", transition: "color 0.3s"
+            }}>
               {balance !== null ? balance.toFixed(2) : "..."} <span style={{ fontSize: 10, opacity: 0.6 }}>{currency}</span>
             </div>
           </div>
@@ -1041,6 +1077,42 @@ export default function App() {
         <div style={{ margin: "0 0 8px" }}>
           <Wheel spinTrigger={spinTrigger} onSpinEnd={handleSpinEnd} />
         </div>
+
+        {/* Session süresi dolunca overlay */}
+        {sessionExpired && (
+          <div style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 200,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animation: "sessionExpire 0.3s ease"
+          }}>
+            <div style={{ textAlign: "center", padding: 32 }}>
+              <div style={{ fontSize: 52, marginBottom: 16 }}>⏰</div>
+              <div style={{ fontFamily: "Orbitron", color: "#ffd600", fontSize: 18, marginBottom: 10 }}>OTURUM SONA ERDİ</div>
+              <div style={{ fontFamily: "Rajdhani", color: "rgba(255,255,255,0.5)", fontSize: 14, marginBottom: 24 }}>
+                Oturumunuzun süresi doldu. Tekrar giriş yapın.
+              </div>
+              <button onClick={() => window.location.reload()} style={{
+                padding: "12px 32px", borderRadius: 10, border: "none",
+                background: "#ffd600", color: "#000", fontFamily: "Orbitron",
+                fontSize: 13, fontWeight: 700, cursor: "pointer"
+              }}>YENİLE</button>
+            </div>
+          </div>
+        )}
+
+        {/* Spin hata mesajı */}
+        {spinError && (
+          <div style={{
+            position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)",
+            background: "rgba(40,0,0,0.95)", border: "1px solid #ff444466",
+            borderRadius: 10, padding: "10px 20px", zIndex: 150,
+            fontFamily: "Rajdhani", color: "#ff6666", fontSize: 13,
+            animation: "shake 0.4s ease, fadeIn 0.2s ease",
+            whiteSpace: "nowrap"
+          }}>
+            ⚠️ {spinError}
+          </div>
+        )}
 
         {/* Tüm durum mesajları çarkın ALTINDA — pointer ile hiç çakışmaz */}
         <div style={{ height: 36, marginBottom: 8, position: "relative" }}>
